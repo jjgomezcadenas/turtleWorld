@@ -13,6 +13,13 @@ class PrtLvl(Enum):
     Verbose  = 4
 
 
+def in_range(x, xmin, xmax):
+    if x >= xmin and x < xmax:
+        return True
+    else:
+        return False
+
+
 def print_level(prtl, PRT):
     if prtl.value >= PRT.value:
         return True

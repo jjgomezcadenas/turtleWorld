@@ -12,7 +12,7 @@ from scipy.stats import gamma
 from scipy.stats import expon
 from . stats import c19_nbinom_rvs
 
-from . utils import PrtLvl, print_level, throw_dice
+from . utils import PrtLvl, print_level, throw_dice, in_range
 
 CALIB = False
 prtl=PrtLvl.Concise
@@ -24,7 +24,6 @@ def build_ed_network(turtles=20000, k=0.002):
     n = np.mean(D)
     print(f' mean number of neighbors ={n}')
     return G, n
-
 
 
 def number_turtles_in_cell(cell):
@@ -58,12 +57,6 @@ def number_of_exposed(model):
     a =[agent for agent in model.schedule.agents if agent.kind=='E']
     return len(a)
 
-
-def in_range(x, xmin, xmax):
-    if x >= xmin and x < xmax:
-        return True
-    else:
-        return False
 
 def number_of_turtles_in_neighborhood(model):
     nc = 0
@@ -130,17 +123,138 @@ def get_time(t_dist, t_mean):
     else:
         return t_mean
 
+class BarrioTortugaBase(Model):
+    """Base class for Turtle models of SEIR epidemics.
 
-class BarrioTortugaSEIR(Model):
+        The parameters are:
+            turtles: the number of agents in the simulation.
+            i0     : the initial number of infected agents.
+            r0     : basic reproductive number
+            p      : transmission probability per contact
+            ti     : incubation time
+            tr     : recovery time = duration of infectiouness.
+
+        Stochastic behaviour can be introduced in:
+        1) ti and tr, which can be chosen to be either gamma or exponentially distributed
+        2) p, via R0, which can be chosen to be either negative binomial or Poisson.
+
+        This is controlled through parameters ti_dist, tr_dist and p_dist
+
+    """
+    def __init__(self,
+                 ticks_per_day =    5,
+                 i0            =   10,
+                 r0            =    3.5,
+                 ti            =    5.5,
+                 tr            =    6.5,
+                 ti_dist       =    'F',    # F for fixed, E for exp G for Gamma
+                 tr_dist       =    'F',
+                 p_dist        =    'F'     # F for fixed, S for Binomial, P for Poissoin
+                 ):
+
+
+        self.ticks_per_day = ticks_per_day
+        self.i0            = i0
+        self.r0            = r0
+        self.ti            = ti
+        self.tr            = tr
+        self.ti_dist       = ti_dist
+        self.tr_dist       = tr_dist
+        self.p_dist        = p_dist
+        self.P        = []
+        self.Ti       = []
+        self.Tr       = []
+
+        self.schedule   = RandomActivation(self)
+
+        # Prob
+        self.k = 1
+        if   self.p_dist == 'S':
+            self.k  = 0.16
+        elif self.p_dist == 'P':
+            self.k = 1e+4
+
+
+        if print_level(prtl, PrtLvl.Concise):
+            print(f""" Simulation Parameters:
+
+            General
+                initial infected        = {self.i0}
+                ticks per day           = {self.ticks_per_day}
+
+            Control of stochastics
+                ti_dist = {self.ti_dist}
+                tr_dist = {self.tr_dist}
+                p_dist =  {self.ti_dist}
+
+            Average parameters controlling t and prob
+
+                ti     =  {self.ti}
+                tr     =  {self.tr}
+                k      =  {self.k}
+                r0     =  {self.r0}
+
+            """)
+
+        self.datacollector          = DataCollector(
+        model_reporters             = {"NumberOfInfected": number_of_infected,
+                                       "NumberOfSusceptible": number_of_susceptible,
+                                       "NumberOfRecovered": number_of_recovered,
+                                       "NumberOfExposed": number_of_exposed}
+            )
+
+
+    def step(self):
+        self.schedule.step()               # step all turtles
+        self.datacollector.collect(self)
+
+
+    def get_prob(self):
+        if self.p_dist == 'S' or self.p_dist == 'P':
+            r0  = c19_nbinom_rvs(self.r0, self.k) # self.k decided which one
+            p   = r0 /(self.nc * self.tr * self.ticks_per_day)
+        else:
+            p = self.p
+        return p
+
+
+    def infection_prob(self, nc):
+        # infection probability for fixed case
+        return self.r0 /(nc * self.tr * self.ticks_per_day)
+
+
+    def print_gen_simul_params(self):
+        print(f""" Simulation Parameters:
+
+        General
+            number of turtles       = {self.turtles}
+            initial infected        = {self.i0}
+            ticks per day           = {self.ticks_per_day}
+
+        Control of stochastics
+            ti_dist = {self.ti_dist}
+            tr_dist = {self.tr_dist}
+            p_dist =  {self.ti_dist}
+
+        Average parameters controlling t and prob
+
+            ti     =  {self.ti}
+            tr     =  {self.tr}
+            k      =  {self.k}
+            r0     =  {self.r0}
+
+        Number of contacts and infection prob
+            nc     =  {self.nc}
+            p      =  {self.p}
+
+
+        """)
+
+class BarrioTortugaSEIR(BarrioTortugaBase):
     """A simple model of SEIR epidemics.
 
     The parameters are:
         turtles: the number of agents in the simulation.
-        i0     : the initial number of infected agents.
-        r0     : basic reproductive number
-        p      : transmission probability per contact
-        ti     : incubation time
-        tr     : recovery time = duration of infectiouness.
 
 
         Model calibration. R0 can be written as:
@@ -161,12 +275,8 @@ class BarrioTortugaSEIR(Model):
        Two quantities can be taken as known, R0 and ti. Then one can determine p as:
            p = R0 /(c * ti)
 
-        Stochastic behaviour can be introduced in:
-        1) ti and tr, which can be chosen to be either gamma or exponentially distributed
-        2) p, via R0, which can be chosen to be either negative binomial or Poisson.
 
     """
-
 
     def __init__(self,
                  ticks_per_day =    5,
@@ -181,86 +291,27 @@ class BarrioTortugaSEIR(Model):
                  width         =   40,
                  height        =   40):
 
+        super().__init__(ticks_per_day, i0, r0, ti, tr, ti_dist, tr_dist, p_dist)
 
         # define grid and schedule
-        self.ticks_per_day = ticks_per_day
         self.height     = height
         self.width      = width
         self.grid       = MultiGrid(self.height, self.width, torus=True)
-        self.moore      = True
-        self.schedule   = RandomActivation(self)
-
+        self.moore      = True  # always 9 cells
         self.turtles  = turtles
-        self.i0       = i0
-        self.r0       = r0
 
         # average number of contacts:  nc = 9 * N / area
         # where N / area is the average population per cell and 9 the number of cells
         self.nc         = 9 * self.turtles / (self.width * self.height)
 
-        # counters
-        self.P        = []
-        self.Ti       = []
-        self.Tr       = []
-
-        # distribution types
-        self.ti_dist = ti_dist
-        self.tr_dist = tr_dist
-        self.p_dist  = p_dist
-
-        self.ti = ti
-        self.tr = tr
-
-        # Prob
-        self.k = 1
-        if   self.p_dist == 'S':
-            self.k  = 0.16
-        elif self.p_dist == 'P':
-            self.k = 1e+4
-
         # infection probability for fixed case
-        self.p   = self.r0 /(self.nc * self.tr * self.ticks_per_day)
+        self.p   = self.infection_prob(self.nc)
 
         if print_level(prtl, PrtLvl.Concise):
-            print(f""" Simulation Parameters:
-
-            General
-                number of turtles       = {self.turtles}
-                initial infected        = {self.i0}
-                ticks per day           = {self.ticks_per_day}
+            self.print_gen_simul_params()
+            print(f""" Additional Simulation Parameters:
                 Grid (w x h)            = {self.width} x {self.height}
-
-            Control of stochastics
-
-                ti_dist = {ti_dist}
-                tr_dist = {tr_dist}
-                p_dist =  {ti_dist}
-
-            Average parameters controlling t and prob
-
-                ti     =  {self.ti}
-                tr     =  {self.tr}
-                k      =  {self.k}
-                r0     =  {self.r0}
-                nc     =  {self.nc}
-                p      =  {self.p}
-
             """)
-
-        # Data collector
-        if CALIB:
-            self.datacollector          = DataCollector(
-            model_reporters             = {"NumberOfneighbors": number_of_turtles_in_neighborhood}
-
-            )
-        else:
-            self.datacollector          = DataCollector(
-            model_reporters             = {"NumberOfInfected": number_of_infected,
-                                           "NumberOfSusceptible": number_of_susceptible,
-                                           "NumberOfRecovered": number_of_recovered,
-                                           "NumberOfExposed": number_of_exposed}
-            )
-
 
         # Create turtles
         if CALIB:  # only susceptible agents
@@ -316,193 +367,19 @@ class BarrioTortugaSEIR(Model):
         self.datacollector.collect(self)
 
 
-    def get_prob(self):
-        if self.p_dist == 'S' or self.p_dist == 'P':
-            r0  = c19_nbinom_rvs(self.r0, self.k) # self.k decided which one
-            p   = r0 /(self.nc * self.tr * self.ticks_per_day)
-        else:
-            p = self.p
-        return p
-
-
-    def step(self):
-        self.schedule.step()               # step all turtles
-        self.datacollector.collect(self)
-
-
     def random_pos(self):
         x = self.random.randrange(self.width)
         y = self.random.randrange(self.height)
         return x, y
 
 
-    def number_of_agents(self, kind):
-        if kind == 'A':
-            a =[agent for agent in self.schedule.agents]
-        else:
-            a =[agent for agent in self.schedule.agents if agent.kind==kind]
-        return len(a)
-
-
-class SeirTurtle(Agent):
-    '''
-    Class implementing a SEIR turtle that can move at random
-
-    '''
-
-    def __init__(self, unique_id, pos, kind, ti, tr, prob, model):
-        '''
-        grid: The MultiGrid object in which the agent lives.
-        x: The agent's current x coordinate
-        y: The agent's current y coordinate
-        stochastic: If false mean average
-        '''
-        super().__init__(unique_id, model)
-        self.pos  = pos
-        self.p    = prob
-        self.kind = kind
-        self.ti   = ti           # equals model average for now throw dist later
-        self.tr   = tr           # equals model average for now throw dist later
-        self.il   = 0            # counter tick
-        self.iil  = 0           # infection length
-        self.iel  = 0           # infection length
-
-
-    def step(self):
-        self.il+=1
-
-        # Turtle became exposed with tag self.iel (see infect ())
-        if self.kind == 'E' :
-        #and self.model.schedule.steps > self.iel:
-
-            if print_level(prtl, PrtLvl.Detailed):
-                    print(f"""Found exposed with tag = {self.iel}
-                          global time = {self.model.schedule.steps}
-                          turtle id   = {self.unique_id}
-                """)
-
-            # When time is larger than incubation time, become infected
-            if self.model.schedule.steps - self.iel > self.ti :
-                self.iil = self.model.schedule.steps
-                self.kind = 'I'
-
-                if print_level(prtl, PrtLvl.Detailed):
-                    print(f"""Turning E into I with tag = {self.iil}
-                          global time = {self.model.schedule.steps}
-                          turtle id   = {self.unique_id}
-                """)
-
-        elif self.kind == 'I':
-            self.infect()
-
-            if print_level(prtl, PrtLvl.Detailed):
-                print(f"""Found Infected with tag = {self.iil}
-                          global time = {self.model.schedule.steps}
-                          turtle id   = {self.unique_id}
-                          **going to infect***
-                """)
-
-            # When time is larger than recovery time, become recovered
-            if self.model.schedule.steps - self.iil >  self.tr :
-                self.kind = 'R'
-
-                if print_level(prtl, PrtLvl.Detailed):
-                    print(f"""Turning I into R with tag = {self.iil}
-                          global time = {self.model.schedule.steps}
-                          turtle id   = {self.unique_id}
-                """)
-
-        self.random_move()
-
-    def infect(self):
-        if print_level(prtl, PrtLvl.Verbose):
-                print(f"""Now infecting with tags  {self.iil}
-                          global time = {self.model.schedule.steps}
-                          turtle id   = {self.unique_id}
-
-                """)
-        # array of coordinates ((x0,y0), (x1,y1), (x2, y2),...) of neighbors
-        # last parameter True inludes own cell
-        n_xy = self.model.grid.get_neighborhood(self.pos, self.model.moore, True)
-
-        if print_level(prtl, PrtLvl.Verbose):
-                print(f'coordinates of neighbors, including me = {n_xy}')
-
-        for xy in n_xy:   # loops over all cells
-            if print_level(prtl, PrtLvl.Verbose):
-                    print(f'neighbors = {xy}')
-
-            cell = self.model.grid.get_cell_list_contents(xy)
-            turtles = [obj for obj in cell if isinstance(obj, type(self))]
-
-            if print_level(prtl, PrtLvl.Verbose):
-                print(f' number of turtles = {len(turtles)}')
-
-            for turtle in turtles:  # loops over all turtles in cells
-
-                if print_level(prtl, PrtLvl.Verbose):
-                    print(f' turtle kind = {turtle.kind}')
-
-                if turtle.kind == 'S':  # if susceptible found try to infect
-                    if print_level(prtl, PrtLvl.Verbose):
-                        print(f' throwing dice')
-
-                    if throw_dice(self.p):
-                        turtle.kind = 'E'
-                        turtle.iel = self.model.schedule.steps # tag = infection time
-
-                        if print_level(prtl, PrtLvl.Detailed):
-                            print(f' **TURNING TURTLE INTO E ** ')
-                            print(f"""tag  {turtle.iel}
-                                      global time = {self.model.schedule.steps}
-                                      turtle id   = {turtle.unique_id}
-
-                            """)
-
-    def random_move(self):
-        '''
-        Step one cell in any allowable direction.
-        We use grid’s built-in get_neighborhood method, which returns all the neighbors of a given cell.
-        This method can get two types of cell neighborhoods: Moore (including diagonals),
-        and Von Neumann (only up/down/left/right).
-        It also needs an argument as to whether to include the center cell itself as one of the neighbors.
-        '''
-        # Pick the next cell from the adjacent cells.
-        next_moves = self.model.grid.get_neighborhood(self.pos, self.model.moore, True)
-        next_move = self.random.choice(next_moves)
-        # Now move:
-        self.model.grid.move_agent(self, next_move)
-
 
 class BarrioTortugaNX(Model):
     """A simple model of  epidemics using networx.
 
     The parameters are:
-        turtles: the number of agents in the simulation.
-        i0     : the initial number of infected agents.
-        r0     : basic reproductive number
-        p      : transmission probability per contact
-        ti     : incubation time
-        tr     : recovery time = duration of infectiouness.
-
-
-        Model calibration. R0 can be written as:
-
-        R0 = c x p x ti
-
-        where:
-           c is the average number of contacts per unit time
-           c = nc x N /a
-
-           p is the transmission probability per contact
-           ti is the duration of the infection (the time the turtle is in the I category)
-
-       Two quantities can be taken as known, R0 and ti. Then one can determine p as:
-           p = R0 /(c * ti)
-
-        Stochastic behaviour can be introduced in:
-        1) ti and tr, which can be chosen to be either gamma or exponentially distributed
-        2) p, via R0, which can be chosen to be either negative binomial or Poisson.
+        G : the network chosen
+        neighbors: average number of neighbors (nodes) per turle (node)
 
     """
 
@@ -520,74 +397,18 @@ class BarrioTortugaNX(Model):
                  p_dist        =    'F',    # F for fixed, S for Binomial, P for Poissoin
                  ):
 
-
+        super().__init__(ticks_per_day, i0, r0, ti, tr, ti_dist, tr_dist, p_dist)
         # define grid and schedule
-        self.ticks_per_day = ticks_per_day
 
         self.grid = NetworkGrid(G)
-        self.schedule = RandomActivation(self)
-
-
         self.turtles  = len(G)
-        self.i0       = i0
-        self.r0       = r0
         self.nc         = neighbors
 
-        # counters
-        self.P        = []
-        self.Ti       = []
-        self.Tr       = []
-
-        # distribution types
-        self.ti_dist = ti_dist
-        self.tr_dist = tr_dist
-        self.p_dist  = p_dist
-
-        self.ti = ti
-        self.tr = tr
-
-        # Prob
-        self.k = 1
-        if   self.p_dist == 'S':
-            self.k  = 0.16
-        elif self.p_dist == 'P':
-            self.k = 1e+4
-
         # infection probability for fixed case
-        self.p   = self.r0 /(self.nc * self.tr * self.ticks_per_day)
+        self.p   = self.infection_prob(self.nc)
 
         if print_level(prtl, PrtLvl.Concise):
-            print(f""" Simulation Parameters:
-
-            General
-                number of turtles       = {self.turtles}
-                initial infected        = {self.i0}
-                ticks per day           = {self.ticks_per_day}
-
-            Control of stochastics
-
-                ti_dist = {ti_dist}
-                tr_dist = {tr_dist}
-                p_dist =  {ti_dist}
-
-            Average parameters controlling t and prob
-
-                ti     =  {self.ti}
-                tr     =  {self.tr}
-                k      =  {self.k}
-                r0     =  {self.r0}
-                nc     =  {self.nc}
-                p      =  {self.p}
-
-            """)
-
-        self.datacollector          = DataCollector(
-        model_reporters             = {"NumberOfInfected": number_of_infected,
-                                           "NumberOfSusceptible": number_of_susceptible,
-                                           "NumberOfRecovered": number_of_recovered,
-                                           "NumberOfExposed": number_of_exposed}
-            )
-
+            self.print_gen_simul_params()
 
         # Create turtles
         ss = self.turtles - i0            # number of susceptibles
@@ -633,35 +454,15 @@ class BarrioTortugaNX(Model):
         self.datacollector.collect(self)
 
 
-    def get_prob(self):
-        if self.p_dist == 'S' or self.p_dist == 'P':
-            r0  = c19_nbinom_rvs(self.r0, self.k) # self.k decided which one
-            p   = r0 /(self.nc * self.tr * self.ticks_per_day)
-        else:
-            p = self.p
-        return p
-
-
-    def step(self):
-        self.schedule.step()               # step all turtles
-        self.datacollector.collect(self)
-
-
-class NXTurtle(Agent):
+class TurtleBase(Agent):
     '''
-    Class implementing a SEIR turtle living in a network
+    Base Class for a turtle
 
     '''
 
-    def __init__(self, node, kind, ti, tr, prob, model):
-        '''
-        grid: The MultiGrid object in which the agent lives.
-        x: The agent's current x coordinate
-        y: The agent's current y coordinate
-        stochastic: If false mean average
-        '''
-        super().__init__(node, model)
-        self.pos   = node
+    def __init__(self, unique_id, kind, ti, tr, prob, model):
+        super().__init__(unique_id, model)
+
         self.p    = prob
         self.kind = kind
         self.ti   = ti           # equals model average for now throw dist later
@@ -671,11 +472,11 @@ class NXTurtle(Agent):
         self.iel  = 0           # infection length
 
 
-    def step(self):
+    def infection_step(self):
         self.il+=1
+
         # Turtle became exposed with tag self.iel (see infect ())
         if self.kind == 'E' :
-        #and self.model.schedule.steps > self.iel:
 
             if print_level(prtl, PrtLvl.Detailed):
                     print(f"""Found exposed with tag = {self.iel}
@@ -701,6 +502,7 @@ class NXTurtle(Agent):
                           turtle id   = {self.unique_id}
                           **going to infect***
                 """)
+
             self.infect()
 
             # When time is larger than recovery time, become recovered
@@ -714,45 +516,130 @@ class NXTurtle(Agent):
                 """)
 
 
-    def infect(self):
+    def turning_into_exposed(self, turtle):
         if print_level(prtl, PrtLvl.Verbose):
-                print(f"""Now infecting with tags  {self.iil}
+            print(f' throwing dice')
+
+        if throw_dice(self.p):
+            turtle.kind = 'E'
+            turtle.iel = self.model.schedule.steps # tag = infection time
+
+            if print_level(prtl, PrtLvl.Detailed):
+                print(f' **TURNING TURTLE INTO E ** ')
+                print(f"""tag  {turtle.iel}
                           global time = {self.model.schedule.steps}
-                          turtle id   = {self.unique_id}
+                          turtle id   = {turtle.unique_id}
 
                 """)
+
+    def print_infection_banner(self):
+        print(f"""Now infecting with tags  {self.iil}
+                  global time = {self.model.schedule.steps}
+                  turtle id   = {self.unique_id}
+
+        """)
+
+class SeirTurtle(TurtleBase):
+    '''
+    Class implementing a SEIR turtle that can move at random
+
+    '''
+
+    def __init__(self, unique_id, pos, kind, ti, tr, prob, model):
+        '''
+        grid: The MultiGrid object in which the agent lives.
+        x: The agent's current x coordinate
+        y: The agent's current y coordinate
+        stochastic: If false mean average
+        '''
+        super().__init__(unique_id, kind, ti, tr, prob, model)
+        self.pos  = pos
+
+    def step(self):
+        self.infection_step()
+        self.random_move()
+
+
+    def infect(self):
+        if print_level(prtl, PrtLvl.Verbose):
+            self.print_infection_banner()
+
         # array of coordinates ((x0,y0), (x1,y1), (x2, y2),...) of neighbors
         # last parameter True inludes own cell
-        neighbors = self.model.grid.get_neighbors(self.pos)
+        n_xy = self.model.grid.get_neighborhood(self.pos, self.model.moore, True)
+
+        if print_level(prtl, PrtLvl.Verbose):
+                print(f'coordinates of neighbors, including me = {n_xy}')
+
+        for xy in n_xy:   # loops over all cells
+            if print_level(prtl, PrtLvl.Verbose):
+                    print(f'neighbors = {xy}')
+
+            cell = self.model.grid.get_cell_list_contents(xy)
+            turtles = [obj for obj in cell if isinstance(obj, type(self))]
+
+            if print_level(prtl, PrtLvl.Verbose):
+                print(f' number of turtles = {len(turtles)}')
+
+            for turtle in turtles:  # loops over all turtles in cells
+
+                if print_level(prtl, PrtLvl.Verbose):
+                    print(f' turtle kind = {turtle.kind}')
+
+                if turtle.kind == 'S':  # if susceptible found try to infect
+                    self.turning_into_exposed(turtle)
+
+
+    def random_move(self):
+        '''
+        Step one cell in any allowable direction.
+        We use grid’s built-in get_neighborhood method, which returns all the neighbors of a given cell.
+        This method can get two types of cell neighborhoods: Moore (including diagonals),
+        and Von Neumann (only up/down/left/right).
+        It also needs an argument as to whether to include the center cell itself as one of the neighbors.
+        '''
+        # Pick the next cell from the adjacent cells.
+        next_moves = self.model.grid.get_neighborhood(self.pos, self.model.moore, True)
+        next_move = self.random.choice(next_moves)
+        # Now move:
+        self.model.grid.move_agent(self, next_move)
+
+
+class NXTurtle(TurtleBase):
+    '''
+    Class implementing a SEIR turtle living in a network
+
+    '''
+
+    def __init__(self, unique_id, kind, ti, tr, prob, model):
+        '''
+        grid: The MultiGrid object in which the agent lives.
+        x: The agent's current x coordinate
+        y: The agent's current y coordinate
+        stochastic: If false mean average
+        '''
+        super().__init__(unique_id, kind, ti, tr, prob, model)
+        self.pos   = unique_id   # node
+
+
+    def step(self):
+        self.infection_step()
+
+
+    def infect(self):
+        if print_level(prtl, PrtLvl.Verbose):
+            self.print_infection_banner()
+
+        neighbors = self.model.grid.get_neighbors(self.pos) # neighbor nodes
 
         if print_level(prtl, PrtLvl.Verbose):
                 print(f'neighbors  = {neighbors}')
 
         turtles = self.model.grid.get_cell_list_contents(neighbors)
-
-
         for turtle in turtles:  # loops over all turtles in cells
-            if print_level(prtl, PrtLvl.Verbose):
-                print(f'turtle  = {turtle}')
 
             if print_level(prtl, PrtLvl.Verbose):
                 print(f' turtle kind = {turtle.kind}')
 
-            if turtle.kind == 'S':  # if susceptible found try to infect
-                if print_level(prtl, PrtLvl.Verbose):
-                    print(f' throwing dice')
-
-                if throw_dice(self.p):
-                    if print_level(prtl, PrtLvl.Verbose):
-                        print(f' Turtle becomes exposed')
-
-                    turtle.kind = 'E'
-                    turtle.iel = self.model.schedule.steps # tag = infection time
-
-                    if print_level(prtl, PrtLvl.Detailed):
-                        print(f' **TURNING TURTLE INTO E ** ')
-                        print(f"""tag  {turtle.iel}
-                                  global time = {self.model.schedule.steps}
-                                  turtle id   = {turtle.unique_id}
-
-                        """)
+                if turtle.kind == 'S':  # if susceptible found try to infect
+                    self.turning_into_exposed(turtle)
