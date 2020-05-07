@@ -1,16 +1,20 @@
 from scipy.stats import gamma
-from turtleWorld.BarrioTortugaSEIR import BarrioTortugaNX, build_ed_network
+from turtleWorld.BarrioTortugaSEIR import BarrioTortugaNX
+from turtleWorld.networks import build_ed_network
 import pandas as pd
 import networkx as nx
 import os
 import sys
 import shutil
 
-turtles        = 20000
-k              = 0.002
+# turtles        = 20000
+# k              = 0.002
 
-print(f'Defining ED network for {turtles} turtles, k = {k}')
-G, n           = build_ed_network(turtles, k)
+turtles        = 10000
+k              = 0.05
+
+# print(f'Defining ED network for {turtles} turtles, k = {k}')
+# G, n           = build_ed_network(turtles, k)
 
 def run_turtles(steps          = 500,
                 fprint         = 25,
@@ -21,13 +25,14 @@ def run_turtles(steps          = 500,
                 tr             = 6.5,
                 ti_dist        = 'F',    # F for fixed, E for exp G for Gamma
                 tr_dist        = 'F',
-                p_dist         = 'F',    # F for fixed, S for Binomial, P for Poissoin
-                width          = 40,
-                height         = 40):
+                p_dist         = 'F'    # F for fixed, S for Binomial, P for Poissoin
+                ):
 
+
+    print(f'Defining ED network for {turtles} turtles, k = {k}')
+    G, n           = build_ed_network(turtles, k)
 
     print(f" Running Simulation with {turtles}  turtles, for {steps} steps.")
-
     bt = BarrioTortugaNX(G, n, ticks_per_day, i0, r0, ti, tr,
                          ti_dist, tr_dist, p_dist)
 

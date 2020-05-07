@@ -38,9 +38,6 @@ def run_turtles(steps          = 500,
     STATS['P']  = bt.P
     return bt.datacollector.get_model_vars_dataframe(), pd.DataFrame.from_dict(STATS)
 
-# Directory
-directory = "GeeksForGeeks"
-
 
 
 def run_series(ns=100,
@@ -128,7 +125,7 @@ run_series(ns             = 2,
            steps          = 500,
            fprint         = 25,
            ticks_per_day  = 5,
-           turtles        = 10000,
+           turtles        = 1000,
            i0             = 10,
            r0             = 3.5,
            ti             = 5.5,

@@ -5,118 +5,22 @@ from mesa import Agent
 from mesa.time import RandomActivation
 import numpy as np
 
-import networkx as nx
-from networkx import *
-
 from scipy.stats import gamma
 from scipy.stats import expon
 from . stats import c19_nbinom_rvs
+
+from . turtle_functions import number_of_infected
+from . turtle_functions import number_of_susceptible
+from . turtle_functions import number_of_recovered
+from . turtle_functions import number_of_exposed
 
 from . utils import PrtLvl, print_level, throw_dice, in_range
 
 CALIB = False
 prtl=PrtLvl.Concise
 
-
-def build_ed_network(turtles=20000, k=0.002):
-    G = nx.erdos_renyi_graph(20000,0.002)
-    D = np.array([degree(G,n) for n in nodes(G)])
-    n = np.mean(D)
-    print(f' mean number of neighbors ={n}')
-    return G, n
-
-
-def number_turtles_in_cell(cell):
-    turtles = [obj for obj in cell if isinstance(obj, SeirTurtle)]
-    return len(turtles)
-
-
-def turtles_in_cell(cell):
-    if number_turtles_in_cell(cell) > 0:
-        return True
-    else:
-        return False
-
-
-def number_of_infected(model):
-    a =[agent for agent in model.schedule.agents if agent.kind=='I']
-    return len(a)
-
-
-def number_of_susceptible(model):
-    a =[agent for agent in model.schedule.agents if agent.kind=='S']
-    return len(a)
-
-
-def number_of_recovered(model):
-    a =[agent for agent in model.schedule.agents if agent.kind=='R']
-    return len(a)
-
-
-def number_of_exposed(model):
-    a =[agent for agent in model.schedule.agents if agent.kind=='E']
-    return len(a)
-
-
-def number_of_turtles_in_neighborhood(model):
-    nc = 0
-    ng = 0
-    NC = []
-    for y in range(model.grid.height):
-        for x in range(model.grid.width):
-            ng +=1
-
-            if print_level(prtl, PrtLvl.Verbose):
-                if in_range(x,2,3) and in_range(y,2,3):
-                    print(f'x = {x} y = {y}')
-
-            c = model.grid.get_cell_list_contents((x,y))
-            n_turtles_in_c = number_turtles_in_cell(c)
-
-            if print_level(prtl, PrtLvl.Verbose):
-                if in_range(x,0,3) and in_range(y,2,3):
-                    print(f'number of turtles in this cell  = {n_turtles_in_c}')
-
-            if n_turtles_in_c > 0:
-                #coordinates of neighbors
-                n_xy = model.grid.get_neighborhood((x,y), model.moore, True)
-
-                if print_level(prtl, PrtLvl.Verbose):
-                    if in_range(x,2,3) and in_range(y,2,3):
-                        print(f'coordinates of neighbors inlcuding center = {n_xy}')
-
-                ncc = 0
-                for xy in n_xy:
-                    if print_level(prtl, PrtLvl.Verbose):
-                        if in_range(x,2,3) and in_range(y,2,3):
-                            print(f'coordinates of neighbors = {xy}')
-
-                    cn = model.grid.get_cell_list_contents(xy)
-                    n_turtles_nb = number_turtles_in_cell(cn)
-
-                    if print_level(prtl, PrtLvl.Verbose):
-                        if in_range(x,2,3) and in_range(y,2,3):
-                            print(f'nof turtles = {n_turtles_nb}')
-
-                    if n_turtles_nb > 0:
-                        nc += n_turtles_nb
-                        ncc += n_turtles_nb
-                NC.append(ncc)
-
-                if print_level(prtl, PrtLvl.Verbose):
-                    if in_range(x,2,3) and in_range(y,2,3):
-                        print(f'nof turtles in cell and neighbors = {ncc}')
-
-    if print_level(prtl, PrtLvl.Verbose):
-        print(f'NC = {NC}')
-        print(f'NC mean = {np.mean(NC)}')
-    #return (nc -1) /ng
-    return np.mean(NC)
-
-
 def get_time(t_dist, t_mean):
     if t_dist == 'E':
-        #print(f'throw exp  scale ={t_mean}')
         return expon.rvs(scale=t_mean)
     elif t_dist == 'G':
         return gamma.rvs(a=t_mean, scale=1.0)
@@ -174,6 +78,12 @@ class BarrioTortugaBase(Model):
         elif self.p_dist == 'P':
             self.k = 1e+4
 
+        self.datacollector          = DataCollector(
+        model_reporters             = {"NumberOfInfected": number_of_infected,
+                                       "NumberOfSusceptible": number_of_susceptible,
+                                       "NumberOfRecovered": number_of_recovered,
+                                       "NumberOfExposed": number_of_exposed}
+            )
 
         if print_level(prtl, PrtLvl.Concise):
             print(f""" Simulation Parameters:
@@ -196,16 +106,9 @@ class BarrioTortugaBase(Model):
 
             """)
 
-        self.datacollector          = DataCollector(
-        model_reporters             = {"NumberOfInfected": number_of_infected,
-                                       "NumberOfSusceptible": number_of_susceptible,
-                                       "NumberOfRecovered": number_of_recovered,
-                                       "NumberOfExposed": number_of_exposed}
-            )
-
 
     def step(self):
-        self.schedule.step()               # step all turtles
+        self.schedule.step()
         self.datacollector.collect(self)
 
 
@@ -313,6 +216,7 @@ class BarrioTortugaSEIR(BarrioTortugaBase):
                 Grid (w x h)            = {self.width} x {self.height}
             """)
 
+
         # Create turtles
         if CALIB:  # only susceptible agents
             for i in range(self.turtles):
@@ -373,8 +277,7 @@ class BarrioTortugaSEIR(BarrioTortugaBase):
         return x, y
 
 
-
-class BarrioTortugaNX(Model):
+class BarrioTortugaNX(BarrioTortugaBase):
     """A simple model of  epidemics using networx.
 
     The parameters are:
@@ -406,9 +309,9 @@ class BarrioTortugaNX(Model):
 
         # infection probability for fixed case
         self.p   = self.infection_prob(self.nc)
-
         if print_level(prtl, PrtLvl.Concise):
             self.print_gen_simul_params()
+
 
         # Create turtles
         ss = self.turtles - i0            # number of susceptibles
@@ -419,6 +322,7 @@ class BarrioTortugaNX(Model):
             ti = get_time(self.ti_dist, self.ti)
             tr = get_time(self.tr_dist, self.tr)
             p  = self.get_prob()
+
             self.Ti.append(ti)
             self.Tr.append(tr)
             self.P.append(p)
@@ -516,6 +420,10 @@ class TurtleBase(Agent):
                 """)
 
 
+    def infect(self):
+        pass
+
+
     def turning_into_exposed(self, turtle):
         if print_level(prtl, PrtLvl.Verbose):
             print(f' throwing dice')
@@ -529,8 +437,10 @@ class TurtleBase(Agent):
                 print(f"""tag  {turtle.iel}
                           global time = {self.model.schedule.steps}
                           turtle id   = {turtle.unique_id}
+                          turtle kind = {turtle.kind}
 
                 """)
+
 
     def print_infection_banner(self):
         print(f"""Now infecting with tags  {self.iil}
@@ -538,6 +448,7 @@ class TurtleBase(Agent):
                   turtle id   = {self.unique_id}
 
         """)
+
 
 class SeirTurtle(TurtleBase):
     '''
@@ -554,6 +465,7 @@ class SeirTurtle(TurtleBase):
         '''
         super().__init__(unique_id, kind, ti, tr, prob, model)
         self.pos  = pos
+
 
     def step(self):
         self.infection_step()
@@ -636,10 +548,11 @@ class NXTurtle(TurtleBase):
                 print(f'neighbors  = {neighbors}')
 
         turtles = self.model.grid.get_cell_list_contents(neighbors)
+
         for turtle in turtles:  # loops over all turtles in cells
 
             if print_level(prtl, PrtLvl.Verbose):
                 print(f' turtle kind = {turtle.kind}')
 
-                if turtle.kind == 'S':  # if susceptible found try to infect
-                    self.turning_into_exposed(turtle)
+            if turtle.kind == 'S':  # if susceptible found try to infect
+                self.turning_into_exposed(turtle)
