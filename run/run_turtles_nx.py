@@ -7,19 +7,21 @@ import os
 import sys
 import shutil
 
-# turtles        = 20000
-# k              = 0.002
+#turtles        = 20000
+#k              = 0.002
 
 #turtles        = 10000
 #k              = 0.05
 
-turtles        = 20000
-k              = 20
+#turtles        = 20000
+#k              = 20
 
 # print(f'Defining ED network for {turtles} turtles, k = {k}')
 # G, n           = build_ed_network(turtles, k)
 
-def run_turtles(steps          = 500,
+def run_turtles(turtles        = 20000,
+                k              = 0.002,
+                steps          = 500,
                 fprint         = 25,
                 ticks_per_day  = 5,
                 i0             = 20,
@@ -29,13 +31,13 @@ def run_turtles(steps          = 500,
                 ti_dist        = 'F',    # F for fixed, E for exp G for Gamma
                 tr_dist        = 'F',
                 p_dist         = 'F',    # F for fixed, S for Binomial, P for Poissoin
-                network        = 'ED'   # ED = random netwok BA: preferential attachment
+                network        = 'ER'   # ER = random netwok BA: preferential attachment
                 ):
 
 
     print(f'Defining network for {turtles} turtles, k = {k}')
 
-    if network == 'ED':
+    if network == 'ER':
         G, n           = build_ed_network(turtles, k)
     else:
         G, n           = build_ba_network(turtles, k)
@@ -60,6 +62,8 @@ def run_turtles(steps          = 500,
 def run_series(ns=100,
                csv            = False,
                path           ="/Users/jjgomezcadenas/Projects/Development/turtleWorld/data",
+               turtles        = 20000,
+               k              = 0.002,
                steps          = 500,
                fprint         = 25,
                ticks_per_day  = 5,
@@ -70,7 +74,7 @@ def run_series(ns=100,
                ti_dist        = 'F',    # F for fixed, E for exp G for Gamma
                tr_dist        = 'F',
                p_dist         = 'F',    # F for fixed, S for Binomial, P for Poissoin
-               network        = 'ED'   # F for fixed, S for Binomial, P for Poissoin
+               network        = 'ER'   # F for fixed, S for Binomial, P for Poissoin
                ):
 
     if csv:
@@ -100,7 +104,7 @@ def run_series(ns=100,
     DFT   = []
     for i in range(ns):
         print(f' series number {i}')
-        dft, stats = run_turtles(steps, fprint, ticks_per_day, i0, r0, ti, tr,
+        dft, stats = run_turtles(turtles, k, steps, fprint, ticks_per_day, i0, r0, ti, tr,
                                  ti_dist, tr_dist, p_dist, network)
 
         STATS.append(stats)
@@ -124,9 +128,11 @@ def run_series(ns=100,
         df.groupby(df.index).mean().to_csv(mfile, sep=" ")
 
 
-run_series(ns             = 2,
+run_series(ns             = 1,
            csv            = True,
            path           ="/Users/jjgomezcadenas/Projects/Development/turtleWorld/data",
+           turtles        = 40000,
+           k              = 20,
            steps          = 500,
            fprint         = 25,
            ticks_per_day  = 5,
