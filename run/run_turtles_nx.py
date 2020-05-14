@@ -1,6 +1,6 @@
 from scipy.stats import gamma
 from turtleWorld.BarrioTortugaSEIR import BarrioTortugaNX
-from turtleWorld.networks import build_ed_network
+from turtleWorld.networks import build_ed_network, build_ba_network
 import pandas as pd
 import networkx as nx
 import os
@@ -10,8 +10,11 @@ import shutil
 # turtles        = 20000
 # k              = 0.002
 
-turtles        = 10000
-k              = 0.05
+#turtles        = 10000
+#k              = 0.05
+
+turtles        = 20000
+k              = 20
 
 # print(f'Defining ED network for {turtles} turtles, k = {k}')
 # G, n           = build_ed_network(turtles, k)
@@ -25,14 +28,19 @@ def run_turtles(steps          = 500,
                 tr             = 6.5,
                 ti_dist        = 'F',    # F for fixed, E for exp G for Gamma
                 tr_dist        = 'F',
-                p_dist         = 'F'    # F for fixed, S for Binomial, P for Poissoin
+                p_dist         = 'F',    # F for fixed, S for Binomial, P for Poissoin
+                network        = 'ED'   # ED = random netwok BA: preferential attachment
                 ):
 
 
-    print(f'Defining ED network for {turtles} turtles, k = {k}')
-    G, n           = build_ed_network(turtles, k)
+    print(f'Defining network for {turtles} turtles, k = {k}')
 
-    print(f" Running Simulation with {turtles}  turtles, for {steps} steps.")
+    if network == 'ED':
+        G, n           = build_ed_network(turtles, k)
+    else:
+        G, n           = build_ba_network(turtles, k)
+
+    print(f" Running Simulation with netwok {network}   for {steps} steps.")
     bt = BarrioTortugaNX(G, n, ticks_per_day, i0, r0, ti, tr,
                          ti_dist, tr_dist, p_dist)
 
@@ -62,10 +70,11 @@ def run_series(ns=100,
                ti_dist        = 'F',    # F for fixed, E for exp G for Gamma
                tr_dist        = 'F',
                p_dist         = 'F',    # F for fixed, S for Binomial, P for Poissoin
+               network        = 'ED'   # F for fixed, S for Binomial, P for Poissoin
                ):
 
     if csv:
-        fn1 = f'NxTurtles_{turtles}_steps_{steps}_i0_{i0}_r0_{r0}_ti_{ti}_tr_{tr}'
+        fn1 = f'Nx_{network}_Turtles_{turtles}_steps_{steps}_i0_{i0}_r0_{r0}_ti_{ti}_tr_{tr}'
         fn2 = f'Tid_{ti_dist}_Tir_{tr_dist}_Pdist_{p_dist}'
         dirname =f'{fn1}_{fn2}'
         mdir = os.path.join(path, dirname)
@@ -92,7 +101,7 @@ def run_series(ns=100,
     for i in range(ns):
         print(f' series number {i}')
         dft, stats = run_turtles(steps, fprint, ticks_per_day, i0, r0, ti, tr,
-                                 ti_dist, tr_dist, p_dist)
+                                 ti_dist, tr_dist, p_dist, network)
 
         STATS.append(stats)
         DFT.append(dft)
@@ -110,19 +119,10 @@ def run_series(ns=100,
 
     if csv:
 
-        # for i in range(len(DFT)):
-        #     file =f'DFT_run_{i}.csv'
-        #     mfile = os.path.join(mdir, file)
-        #     DFT[i].to_csv(mfile, sep=" ")
-
         file=f'DFT_run_average.csv'
         mfile = os.path.join(mdir, file)
         df.groupby(df.index).mean().to_csv(mfile, sep=" ")
 
-        # file=f'STA.csv'
-        # mfile = os.path.join(mdir, file)
-        # STATS[0].to_csv(mfile, sep=" ")
-        #dfs.groupby(dfs.index).mean().to_csv(mfile, sep=" ")
 
 run_series(ns             = 2,
            csv            = True,
@@ -137,4 +137,5 @@ run_series(ns             = 2,
            ti_dist        = 'F',    # F for fixed, E for exp G for Gamma
            tr_dist        = 'F',
            p_dist         = 'F',    # F for fixed, S for Binomial, P for Poissoin
+           network        = 'BA'   # F for fixed, S for Binomial, P for Poissoin
            )
